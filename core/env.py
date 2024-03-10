@@ -7,6 +7,7 @@ from core.base_scenario import BaseScenario
 from core.infrastructure import Link
 from core.flag import *
 from core.task import Task
+from zoo.task import Task
 from core.visualization import plot_2d_network_graph
 
 __all__ = ["EnvLogger", "Env"]
@@ -39,6 +40,9 @@ class Env:
         self.monitor_process = self.controller.process(
             self.monitor_on_done_task_collector())
 
+        self.sys_total_time = 0
+        self.sys_total_energy = 0
+
     @property
     def now(self):
         """The current simulation time."""
@@ -65,10 +69,76 @@ class Env:
         self.done_task_collector.items.clear()
         del self.done_task_info[:]
 
-    def process(self, **kwargs):
+    def process(self, exc_type, **kwargs):
         """Must be called with keyword args."""
-        task_generator = self.execute_task(**kwargs)
+        # 选择任务执行方式
+        if exc_type == 'local':
+            # 本地执行任务
+            task_generator = self.local_execute(**kwargs)
+        elif exc_type == 'edge':
+            # 卸载远程执行任务
+            task_generator = self.edge_execute(**kwargs)
+        else:
+            raise ValueError("Invalid exc_type!")
+
+        # simpy执行任务
         self.controller.process(task_generator)
+
+    def local_execute(self, task: Task):
+        """本地执行任务"""
+        src_node = self.scenario.get_node(task.src_name)
+
+        # 本地计算时延 = 任务大小 / 本地计算能力
+        exc_time = task.task_size / src_node.calculate_loc
+
+        # 本地计算能耗=本地计算功耗 * 本地计算时延
+        exc_energy = src_node.power_loc * exc_time
+
+        # 总时延 = 本地计算时延
+        total_time = exc_time
+
+        # 总能耗 = 本地计算能耗
+        total_energy = exc_energy
+
+        # 模拟任务执行
+        yield self.controller.timeout(total_time)
+
+        self.sys_total_time += total_time
+        self.sys_total_energy += total_energy
+
+    def edge_execute(self, task: Task, dst_name=None):
+        """远程执行任务"""
+        # 判断目标卸载节点为空的情况
+        if dst_name is None:
+            raise ValueError("dst_name cannot be None!")
+
+        # 获取上行/下行传输链路
+        up_stream_link = self.scenario.get_link(task.src_name, dst_name)
+        down_stream_link = self.scenario.get_link(dst_name, task.src_name)
+
+        # 1. 上行传输时延 = 发送时延 + 传播时延 = 任务大小 / 上行传输速率 + 信道长度 / 电磁波的传播速率
+        up_stream_time = task.task_size / up_stream_link.trans_up + up_stream_link.distance / up_stream_link.signal_speed
+        # 2. 边缘计算时延 = 任务大小 / 边缘计算能力
+        exc_time = task.task_size / self.scenario.get_node(dst_name).calculate_mec
+        # 3. 下行传输时延 = 发送时延 + 传播时延 = 任务大小 / 下行传输速率 + 信道长度 / 电磁波的传播速率
+        down_stream_time = task.task_size / down_stream_link.trans_down + down_stream_link.distance / down_stream_link.signal_speed
+        # 4. 总时延 = 上行传输时延 + 边缘计算时延 + 下行传输时延
+        total_time = up_stream_time + exc_time + down_stream_time
+
+        # 1. 上行传输能耗 = 上行传输功率 * 上行传输时延
+        up_stream_energy = up_stream_link.power_up * up_stream_time
+        # 2. 边缘计算能耗 = 边缘计算功率 * 边缘计算时延
+        exc_energy = self.scenario.get_node(dst_name).power_mec * exc_time
+        # 3. 下行传输能耗 = 下行传输功率 * 下行传输时延
+        down_stream_energy = down_stream_link.power_down * down_stream_time
+        # 4. 总能耗 = 上行传输能耗 + 边缘计算能耗 + 下行传输能耗
+        total_energy = up_stream_energy + exc_energy + down_stream_energy
+
+        # 模拟任务的传输和执行
+        yield self.controller.timeout(total_time)
+
+        self.sys_total_time += total_time
+        self.sys_total_energy += total_energy
 
     def execute_task(self, task: Task, dst_name=None):
         """Transmission and Execution logics.
@@ -85,6 +155,8 @@ class Env:
             raise AssertionError(
                 ('DuplicateTaskIdError', log_info, task.task_id)
             )
+
+        # 选择继续
 
         if dst_name is None:
             flag_reactive = True
@@ -104,7 +176,7 @@ class Env:
             # Do task transmission, if necessary
             if dst_name != task.src_name:  # task transmission
                 try:
-                    links_in_path = self.scenario.infrastructure.\
+                    links_in_path = self.scenario.infrastructure. \
                         get_shortest_links(task.src_name, dst_name)
                 except nx.exception.NetworkXNoPath:
                     self.process_task_cnt += 1
@@ -155,6 +227,7 @@ class Env:
                 # 2. Multi-hop
                 task.real_trans_time += (task.task_size_trans * 8
                                          / task.bit_rate) * len(links_in_path)
+
                 # -------------------------------------------------------------
 
                 self.scenario.send_data_flow(task.trans_flow, links_in_path)
