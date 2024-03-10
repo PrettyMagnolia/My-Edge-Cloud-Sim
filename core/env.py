@@ -84,12 +84,12 @@ class Env:
         # simpy执行任务
         self.controller.process(task_generator)
 
-    def local_execute(self, task: Task):
+    def local_execute(self, task: Task, dst_name=None):
         """本地执行任务"""
         src_node = self.scenario.get_node(task.src_name)
 
         # 本地计算时延 = 任务大小 / 本地计算能力
-        exc_time = task.task_size / src_node.calculate_loc
+        exc_time = (task.task_size * 1024) / (src_node.calculate_loc * 1e9)
 
         # 本地计算能耗=本地计算功耗 * 本地计算时延
         exc_energy = src_node.power_loc * exc_time
@@ -117,11 +117,11 @@ class Env:
         down_stream_link = self.scenario.get_link(dst_name, task.src_name)
 
         # 1. 上行传输时延 = 发送时延 + 传播时延 = 任务大小 / 上行传输速率 + 信道长度 / 电磁波的传播速率
-        up_stream_time = task.task_size / up_stream_link.trans_up + up_stream_link.distance / up_stream_link.signal_speed
+        up_stream_time = (task.task_size * 1024) / (up_stream_link.trans_up * 1e9) + up_stream_link.distance / up_stream_link.signal_speed
         # 2. 边缘计算时延 = 任务大小 / 边缘计算能力
-        exc_time = task.task_size / self.scenario.get_node(dst_name).calculate_mec
+        exc_time = (task.task_size * 1024) / (self.scenario.get_node(dst_name).calculate_mec * 1e9)
         # 3. 下行传输时延 = 发送时延 + 传播时延 = 任务大小 / 下行传输速率 + 信道长度 / 电磁波的传播速率
-        down_stream_time = task.task_size / down_stream_link.trans_down + down_stream_link.distance / down_stream_link.signal_speed
+        down_stream_time = (task.task_size * 1024) / (down_stream_link.trans_down * 1e9) + down_stream_link.distance / down_stream_link.signal_speed
         # 4. 总时延 = 上行传输时延 + 边缘计算时延 + 下行传输时延
         total_time = up_stream_time + exc_time + down_stream_time
 

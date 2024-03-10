@@ -33,7 +33,6 @@ class DownStreamLink(Link):
             src: Node,
             dst: Node,
             bandwidth: int,
-            distance: float,
             trans_down: int,
             power_down: float
     ) -> None:
