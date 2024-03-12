@@ -7,10 +7,11 @@ from zoo.link import UpStreamLink, DownStreamLink
 
 
 class Scenario1(BaseScenario):
-    def __init__(self) -> None:
-        # 用户节点400个 边缘节点6个
-        self.user_node_num = 400
-        self.edge_node_num = 6
+    def __init__(self, user_node_num: int, edge_node_num: int, random_seed: int) -> None:
+        random.seed(random_seed)
+
+        self.user_node_num = user_node_num
+        self.edge_node_num = edge_node_num
 
         # 用户节点本地计算能力为10GHZ 计算功耗为 [1-500]W
         self.user_node_calculate_loc = 10
@@ -38,7 +39,7 @@ class Scenario1(BaseScenario):
                 UserNode(
                     node_id=i,
                     name=f'u{i}',
-                    location=Location(16, 68),
+                    location=Location(random.uniform(-1000, 1000), random.uniform(-1000, 1000)),
                     calculate_loc=self.user_node_calculate_loc,
                     power_loc=self.user_node_power_loc
                 )
@@ -50,7 +51,7 @@ class Scenario1(BaseScenario):
                 EdgeNode(
                     node_id=i,
                     name=f'e{i}',
-                    location=Location(16, 68),
+                    location=Location(random.uniform(-1000, 1000), random.uniform(-1000, 1000)),
                     calculate_mec=self.edge_node_calculate_loc,
                     power_mec=self.edge_node_power_loc
                 )
@@ -82,8 +83,6 @@ class Scenario1(BaseScenario):
                         power_down=self.power_down
                     )
                 )
-
-
 
     def status(self, node_name=None, link_args=None):
         # 返回节点和链路状态

@@ -90,18 +90,16 @@ class Env:
 
         # 本地计算时延 = 任务大小 / 本地计算能力
         exc_time = (task.task_size * 1024) / (src_node.calculate_loc * 1e9)
-
-        # 本地计算能耗=本地计算功耗 * 本地计算时延
+        # 本地计算能耗 = 本地计算功耗 * 本地计算时延
         exc_energy = src_node.power_loc * exc_time
+        self.logger.log(f"Task {task.task_id} Local Execute: "f"{task.src_name} Time: {exc_time}s Energy: {exc_energy}J")
+        yield self.controller.timeout(exc_time * 1e3)
 
         # 总时延 = 本地计算时延
         total_time = exc_time
 
         # 总能耗 = 本地计算能耗
         total_energy = exc_energy
-
-        # 模拟任务执行
-        yield self.controller.timeout(total_time)
 
         self.sys_total_time += total_time
         self.sys_total_energy += total_energy
@@ -118,24 +116,30 @@ class Env:
 
         # 1. 上行传输时延 = 发送时延 + 传播时延 = 任务大小 / 上行传输速率 + 信道长度 / 电磁波的传播速率
         up_stream_time = (task.task_size * 1024) / (up_stream_link.trans_up * 1e9) + up_stream_link.distance / up_stream_link.signal_speed
+        # 1. 上行传输能耗 = 上行传输功率 * 上行传输时延
+        up_stream_energy = up_stream_link.power_up * up_stream_time
+        self.logger.log(f"Task {task.task_id} UpSteam Transmission: "f"{task.src_name} --> {dst_name} Time: {up_stream_time}s Energy: {up_stream_energy}J")
+        yield self.controller.timeout(up_stream_time * 1e3)
+
         # 2. 边缘计算时延 = 任务大小 / 边缘计算能力
         exc_time = (task.task_size * 1024) / (self.scenario.get_node(dst_name).calculate_mec * 1e9)
+        # 2. 边缘计算能耗 = 边缘计算功率 * 边缘计算时延
+        exc_energy = self.scenario.get_node(dst_name).power_mec * exc_time
+        self.logger.log(f"Task {task.task_id} Edge Execute: "f"{task.src_name} --> {dst_name} Time: {exc_time}s Energy: {exc_energy}J")
+        yield self.controller.timeout(exc_time * 1e3)
+
         # 3. 下行传输时延 = 发送时延 + 传播时延 = 任务大小 / 下行传输速率 + 信道长度 / 电磁波的传播速率
         down_stream_time = (task.task_size * 1024) / (down_stream_link.trans_down * 1e9) + down_stream_link.distance / down_stream_link.signal_speed
+        # 3. 下行传输能耗 = 下行传输功率 * 下行传输时延
+        down_stream_energy = down_stream_link.power_down * down_stream_time
+        self.logger.log(f"Task {task.task_id} DownSteam Transmission: "f"{task.src_name} --> {dst_name} Time: {down_stream_time}s Energy: {down_stream_energy}J")
+        yield self.controller.timeout(down_stream_time * 1e3)
+
         # 4. 总时延 = 上行传输时延 + 边缘计算时延 + 下行传输时延
         total_time = up_stream_time + exc_time + down_stream_time
 
-        # 1. 上行传输能耗 = 上行传输功率 * 上行传输时延
-        up_stream_energy = up_stream_link.power_up * up_stream_time
-        # 2. 边缘计算能耗 = 边缘计算功率 * 边缘计算时延
-        exc_energy = self.scenario.get_node(dst_name).power_mec * exc_time
-        # 3. 下行传输能耗 = 下行传输功率 * 下行传输时延
-        down_stream_energy = down_stream_link.power_down * down_stream_time
         # 4. 总能耗 = 上行传输能耗 + 边缘计算能耗 + 下行传输能耗
         total_energy = up_stream_energy + exc_energy + down_stream_energy
-
-        # 模拟任务的传输和执行
-        yield self.controller.timeout(total_time)
 
         self.sys_total_time += total_time
         self.sys_total_energy += total_energy
@@ -347,5 +351,8 @@ class Env:
         return self.scenario.status(node_name, link_args)
 
     def close(self):
+        # self.vis_graph(save_as=None)
         self.logger.log("Simulation completed!")
+        self.logger.log(f"Total time: {self.sys_total_time}s Total energy: {self.sys_total_energy}J")
         self.monitor_process.interrupt()
+        return self.sys_total_time, self.sys_total_energy
