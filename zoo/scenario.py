@@ -14,12 +14,12 @@ class Scenario1(BaseScenario):
         self.edge_node_num = edge_node_num
 
         # 用户节点本地计算能力为10GHZ 计算功耗为 [1-500]W
-        self.user_node_calculate_loc = 10
-        self.user_node_power_loc = random.uniform(1, 500)
+        self.user_node_calculate_loc = 0.5  # todo modify
+        self.user_node_power_loc = random.uniform(400, 500)
 
         # 边缘节点边缘计算能力为100GHZ 计算功耗为 [1-50]W
-        self.edge_node_calculate_loc = 100
-        self.edge_node_power_loc = random.uniform(1, 50)
+        self.edge_node_calculate_loc = 10  # todo modify
+        self.edge_node_power_loc = random.uniform(40, 50)
 
         # 上行链路传输功率为15Gbps 传输功耗为 [0.1-1]W
         self.trans_up = 15

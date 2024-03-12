@@ -8,7 +8,7 @@ user_node_num = 20
 edge_node_num = 6
 
 
-def get_task(exp_type: str, task_num: int, task_size: int, user_node_num: int):
+def get_task(exp_type: str, task_num: int, task_size: int, user_node_num: int, edge_node_num: int):
     task_info_list = []
     if exp_type == 'all local':
         for i in range(task_num):
@@ -29,7 +29,7 @@ def get_task(exp_type: str, task_num: int, task_size: int, user_node_num: int):
                 'task_size': task_size,
                 'src_name': 'u' + str(i % user_node_num),
                 'exc_type': 'edge',
-                'dst_name': 'e' + str(random.randint(0, 5))
+                'dst_name': 'e' + str(random.randint(0, edge_node_num - 1))
             }
             task_info_list.append(task_info)
     elif exp_type == 'random':
@@ -61,7 +61,7 @@ def exp_by_task_size():
         for exp_type in ['all local', 'all edge', 'random']:
             scenario = Scenario1(user_node_num=user_node_num, edge_node_num=edge_node_num, random_seed=task_size)
             env = Env(scenario=scenario)
-            task_info_list = get_task(exp_type=exp_type, task_num=task_num, task_size=task_size, user_node_num=user_node_num)
+            task_info_list = get_task(exp_type=exp_type, task_num=task_num, task_size=task_size, user_node_num=user_node_num, edge_node_num=edge_node_num)
             until = 1
             for task_info in task_info_list:
                 generated_time = task_info['generate_time']
@@ -92,15 +92,18 @@ def exp_by_task_num():
     task_size = 1000
     df_time = pd.DataFrame({'task_num': ['all local', 'all edge', 'random']})
     df_energy = pd.DataFrame({'task_num': ['all local', 'all edge', 'random']})
-    for task_num in range(start_task_num, end_task_num + 1, 30):
+
+    for task_num in range(start_task_num, end_task_num + 1, 20):
         # 创建新的一列
         df_time[str(task_num)] = [0, 0, 0]
         df_energy[str(task_num)] = [0, 0, 0]
 
+        user_node_num = task_num
+
         for exp_type in ['all local', 'all edge', 'random']:
-            scenario = Scenario1(user_node_num=user_node_num, edge_node_num=edge_node_num)
+            scenario = Scenario1(user_node_num=user_node_num, edge_node_num=edge_node_num, random_seed=task_num)
             env = Env(scenario=scenario)
-            task_info_list = get_task(exp_type=exp_type, task_num=task_num, task_size=task_size, user_node_num=user_node_num)
+            task_info_list = get_task(exp_type=exp_type, task_num=task_num, task_size=task_size, user_node_num=user_node_num, edge_node_num=edge_node_num)
             until = 1
             for task_info in task_info_list:
                 generated_time = task_info['generate_time']
@@ -126,4 +129,4 @@ def exp_by_task_num():
 
 
 if __name__ == '__main__':
-    exp_by_task_size()
+    exp_by_task_num()
