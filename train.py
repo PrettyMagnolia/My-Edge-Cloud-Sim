@@ -1,6 +1,6 @@
-from DQN.DQN import DQN_agent, ReplayBuffer
 import torch
-from core.env_ import Env
+from zoo.env import Env
+from network.Dueling_DDQN import DQN_agent
 
 
 def main():
@@ -61,6 +61,7 @@ def main():
         if (episode + 1) % 10 == 0:
             # agent.save('DQN', 'YourEnvName', episode + 1)
             pass
+
 
 if __name__ == '__main__':
     main()

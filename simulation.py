@@ -1,4 +1,4 @@
-from core.env import Env
+from zoo.env import Env
 from zoo.scenario import Scenario1
 from zoo.task import Task
 import random
