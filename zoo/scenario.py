@@ -14,7 +14,7 @@ class Scenario1(BaseScenario):
         self.edge_node_num = edge_node_num
 
         # 用户节点本地计算能力为10GHZ 计算功耗为 [1-500]W
-        self.user_node_calculate_loc = 0.5  # todo modify
+        self.user_node_calculate_loc = 1  # todo modify
         self.user_node_power_loc = random.uniform(400, 500)
 
         # 边缘节点边缘计算能力为100GHZ 计算功耗为 [1-50]W

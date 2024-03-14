@@ -3,7 +3,6 @@ import torch.nn as nn
 import numpy as np
 import torch
 import copy
-from utils import demo1
 
 
 # 定义一个函数用于构建神经网络层
@@ -142,6 +141,3 @@ class ReplayBuffer(object):
         ind = torch.randint(0, self.size, device=self.dvc, size=(batch_size,))
         return self.s[ind], self.a[ind], self.r[ind], self.s_next[ind], self.dw[ind]
 
-
-if __name__ == '__main__':
-    demo1()
