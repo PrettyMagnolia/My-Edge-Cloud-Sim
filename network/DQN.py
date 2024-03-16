@@ -15,10 +15,9 @@ def build_net(layer_shape, activation, output_activation):
     return nn.Sequential(*layers)
 
 
-# 定义 Q 网络类
-class Q_Net(nn.Module):
+class Simplified_Q_Net(nn.Module):
     def __init__(self, state_dim, action_dim, hid_shape):
-        super(Q_Net, self).__init__()
+        super(Simplified_Q_Net, self).__init__()
         layers = [state_dim] + list(hid_shape) + [action_dim]
         self.Q = build_net(layers, nn.ReLU, nn.Identity)
 
@@ -27,38 +26,14 @@ class Q_Net(nn.Module):
         return q
 
 
-# 定义 Dueling Q 网络类
-class Duel_Q_Net(nn.Module):
-    def __init__(self, state_dim, action_dim, hid_shape):
-        super(Duel_Q_Net, self).__init__()
-        layers = [state_dim] + list(hid_shape)
-        self.hidden = build_net(layers, nn.ReLU, nn.ReLU)
-        self.V = nn.Linear(hid_shape[-1], 1)
-        self.A = nn.Linear(hid_shape[-1], action_dim)
-
-    def forward(self, s):
-        s = self.hidden(s)
-        Adv = self.A(s)
-        V = self.V(s)
-        Q = V + (Adv - torch.mean(Adv, dim=-1, keepdim=True))  # Q(s,a)=V(s)+A(s,a)-mean(A(s,a))
-        return Q
-
-
-# 定义 DQN agent 类
-class D3QN_agent(object):
+class DQN_agent(object):
     def __init__(self, **kwargs):
-        # 使用kwargs初始化超参数
         self.__dict__.update(kwargs)
         self.tau = 0.005
         self.replay_buffer = ReplayBuffer(self.state_dim, self.dvc, max_size=int(1e6))
-        # 初始化 Q 网络
-        if self.Duel:
-            self.q_net = Duel_Q_Net(self.state_dim, self.action_dim, (self.net_width, self.net_width)).to(self.dvc)
-        else:
-            self.q_net = Q_Net(self.state_dim, self.action_dim, (self.net_width, self.net_width)).to(self.dvc)
+        self.q_net = Simplified_Q_Net(self.state_dim, self.action_dim, (self.net_width, self.net_width)).to(self.dvc)
         self.q_net_optimizer = torch.optim.Adam(self.q_net.parameters(), lr=self.lr)
         self.q_target = copy.deepcopy(self.q_net)
-        # 冻结目标网络的参数
         for p in self.q_target.parameters():
             p.requires_grad = False
 
@@ -140,4 +115,3 @@ class ReplayBuffer(object):
     def sample(self, batch_size):
         ind = torch.randint(0, self.size, device=self.dvc, size=(batch_size,))
         return self.s[ind], self.a[ind], self.r[ind], self.s_next[ind], self.dw[ind]
-

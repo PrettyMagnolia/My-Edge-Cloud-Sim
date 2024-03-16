@@ -15,13 +15,13 @@ def main():
     hid_shape = (64, 64)  # 隐藏层维度
     episodes = 200  # 训练回合数
     batch_size = 64  # 批次大小
-    lr = 0.0003  # 学习率
-    update_every = 20  # 更新频率
+    lr = 3e-2  # 学习率
+    update_every = 10  # 更新频率
 
     env = Env(user_node_num=user_node_num, edge_node_num=edge_node_num)  # 创建环境实例
 
     # 创建D3QN agent实例
-    agent = D3QN_agent(
+    agent = DQN_agent(
         state_dim=state_dim,
         action_dim=action_dim,
         net_width=64,
@@ -34,41 +34,31 @@ def main():
         gamma=0.99
     )
 
-    # agent.load('Dueling DQN', 'test', 100)
     df = pd.DataFrame(columns=['Episode', 'Total Reward'])
 
-    # 迭代训练
     for episode in range(episodes):
-        state = env.reset()  # 重置环境状态
+        state = env.reset()
         total_reward = 0
         total_step = 0
         done = False
 
         while not done:
-            action = agent.select_action(state, deterministic=False)  # 选择动作
-            next_state, reward, done, _ = env.step(action)  # 执行动作并获取下一状态和奖励
-
-            # 存储经验
+            action = agent.select_action(state, deterministic=False)
+            next_state, reward, done, _ = env.step(action)
             agent.replay_buffer.add(state, action, reward, next_state, done)
 
-            state = next_state
-            total_reward += reward
-
-            total_step += 1
             # 训练模型
             if total_step % update_every == 0:
                 for _ in range(update_every):
                     agent.train()
-            # print(f'Step: {total_step}, Total Reward: {reward}')
+
+            state = next_state
+            total_reward += reward
+            total_step += 1
+
         print(f'Episode: {episode + 1}, Total Reward: {total_reward}')
-
         df.loc[len(df)] = {'Episode': episode + 1, 'Total Reward': total_reward}
+    df.to_excel('DQN.xlsx', index=False)
 
-        # 可选：保存模型
-        # if (episode + 1) % 100 == 0:
-        #     agent.save('Dueling_DDQN', 'Sim', episode + 1)
-    df.to_excel(f'./result/Dueling_DDQN_lr_{lr}.xlsx', index=False)
-
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
