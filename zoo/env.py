@@ -1,3 +1,4 @@
+import math
 import random
 
 import gym
@@ -18,9 +19,11 @@ class EnvLogger:
         # print("[{:.2f}]: {}".format(self.controller.now, content))
         pass
 
+
 class Env(gym.Env):
     def __init__(self, user_node_num: int, edge_node_num: int):
         super(Env, self).__init__()
+        random.seed(1)
         self.scenario = Scenario1(user_node_num=user_node_num, edge_node_num=edge_node_num, random_seed=1)
 
         self.controller = simpy.Environment()
@@ -94,7 +97,7 @@ class Env(gym.Env):
             up_power = min_max_normalization(up_link.power_up, 0.1, 1)  # 示例：上行传输功耗归一化
             down_power = min_max_normalization(down_link.power_down, 1, 10)
             edge_cal_power = min_max_normalization(dst_node.power_mec, 40, 50)
-            distance = min_max_normalization(up_link.distance, 0, 2000*2**0.5)
+            distance = min_max_normalization(up_link.distance, 0, 2000 * 2 ** 0.5)
             edge_node_info.extend([distance, edge_cal_power, up_power, down_power])
             # print(edge_node_info)
         state[0] = task_size_normalized
@@ -114,7 +117,12 @@ class Env(gym.Env):
         beta = 0.5  # 能耗权重
         time = real_time_normalize(self.sys_time_list)
         energy = real_time_normalize(self.sys_energy_list)
-        return -(alpha * time + beta * energy)
+        cost = alpha * time + beta * energy
+
+        if cost < 0:
+            print(time, energy, cost)
+
+        return math.log(1.0 / (alpha * time + beta * energy))
 
     def _check_done(self):
         # 检查是否完成

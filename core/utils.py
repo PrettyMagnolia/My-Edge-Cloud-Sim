@@ -1,3 +1,5 @@
+import math
+
 import pandas as pd
 from matplotlib import pyplot as plt
 
@@ -35,7 +37,7 @@ def real_time_normalize(seq: list):
         return 0.5  # 如果所有值都相同，则归一化值设为0.5
 
     # 归一化最后一个值
-    normalized_value = (seq[-1] - min_value) / (max_value - min_value)
+    normalized_value = abs(seq[-1] - min_value) / (max_value - min_value)
 
     return normalized_value
 
