@@ -16,7 +16,7 @@ class EnvLogger:
         self.controller = controller
 
     def log(self, content):
-        # print("[{:.2f}]: {}".format(self.controller.now, content))
+        print("[{:.2f}]: {}".format(self.controller.now, content))
         pass
 
 
@@ -24,7 +24,7 @@ class Env(gym.Env):
     def __init__(self, user_node_num: int, edge_node_num: int):
         super(Env, self).__init__()
         random.seed(1)
-        self.scenario = Scenario1(user_node_num=user_node_num, edge_node_num=edge_node_num, random_seed=1)
+        self.scenario = Scenario1(user_node_num=user_node_num, edge_node_num=edge_node_num, dtd_node_num=6, random_seed=1)
 
         self.controller = simpy.Environment()
         self.logger = EnvLogger(self.controller)
@@ -33,12 +33,12 @@ class Env(gym.Env):
         self.task_index = 0
         self.current_task = None
 
-        self.current_time = 0
-        self.current_energy = 0
         self.sys_time_list = []
         self.sys_energy_list = []
         self.sys_total_time = 0
         self.sys_total_energy = 0
+        # 任务超时数
+        self.task_time_out_num = 0
 
         # 更新状态空间大小：任务大小（1）+ 任务源节点（user_node_num）+ 源节点计算功耗 + 边缘节点信息（edge_node_num * 5：距离，计算功耗，上行传输功耗，下行传输功耗）
         self.state_size = 1 + user_node_num + 1 + edge_node_num * 4
@@ -46,24 +46,48 @@ class Env(gym.Env):
         self.observation_space = spaces.Box(low=0, high=1, shape=(self.state_size,), dtype=np.float32)
 
     def step(self, action):
-        # 示例更新逻辑
         if action == 0:
             # 选择本地执行
-            self.local_execute(self.current_task)
+            task_time, task_energy = self.local_execute(self.current_task)
+            dst_node = None
         else:
-            # 选择边缘节点执行
-            self.edge_execute(self.current_task, dst_name=f'e{action - 1}')
+            dst_node = self.scenario.get_node(f'e{action - 1}')
+            if dst_node is None or dst_node.is_available is False:
+                # 选择了不可卸载的远程节点 需要进行惩罚
+                task_time, task_energy = self.local_execute(self.current_task)
+            else:
+                task_time, task_energy = self.edge_execute(self.current_task, dst_name=f'e{action - 1}')
+        # 任务时间单位转换
+        task_time *= 1e3
+        time_out_flag = False
+        if task_time > self.current_task.max_time * 1e-3:
+            print(f"Task {self.current_task.task_id} timeout! Time: {task_time}ms")
+            self.task_time_out_num += 1
+            # 超时惩罚
+            time_out_flag = True
 
-        self.sys_total_time += self.current_time
-        self.sys_total_energy += self.sys_total_time
-        self.sys_time_list.append(self.sys_total_time)
-        self.sys_energy_list.append(self.sys_total_energy)
+        self.sys_total_time += task_time
+        self.sys_total_energy += task_energy
+        self.sys_time_list.append(task_time)
+        self.sys_energy_list.append(task_energy)
+
+        # 分配任务到线程
+        self.controller.process(self.task_exec(task_time, dst_node))
+        # 每100ms更新一次状态
+        self.controller.run(self.controller.now + 100 * 1e-3)
 
         state = self._get_next_state()
         done = self._check_done()
-        reward = self._calculate_reward()
+        reward = self._calculate_reward(time_out_flag=time_out_flag)
 
         return state, reward, done, {}
+
+    def task_exec(self, exec_time, dst_node=None):
+        if dst_node is not None:
+            dst_node.is_available = False
+        yield self.controller.timeout(exec_time)
+        if dst_node is not None:
+            dst_node.is_available = True
 
     def reset(self):
         self.controller = simpy.Environment()
@@ -111,18 +135,14 @@ class Env(gym.Env):
 
         return state
 
-    def _calculate_reward(self):
+    def _calculate_reward(self, time_out_flag):
         # 计算奖励函数
         alpha = 0.5  # 时延权重
         beta = 0.5  # 能耗权重
         time = real_time_normalize(self.sys_time_list)
         energy = real_time_normalize(self.sys_energy_list)
-        cost = alpha * time + beta * energy
 
-        if cost < 0:
-            print(time, energy, cost)
-
-        return math.log(1.0 / (alpha * time + beta * energy))
+        return math.log(1.0 / (alpha * time + beta * energy)) - 100 if not time_out_flag else -1
 
     def _check_done(self):
         # 检查是否完成
@@ -137,7 +157,6 @@ class Env(gym.Env):
         # 本地计算能耗 = 本地计算功耗 * 本地计算时延
         exc_energy = src_node.power_loc * exc_time
         self.logger.log(f"Task {task.task_id} Local Execute: "f"{task.src_name} Time: {exc_time}s Energy: {exc_energy}J")
-        # yield self.controller.timeout(exc_time * 1e3)
 
         # 总时延 = 本地计算时延
         total_time = exc_time
@@ -145,14 +164,16 @@ class Env(gym.Env):
         # 总能耗 = 本地计算能耗
         total_energy = exc_energy
 
-        self.current_time = total_time
-        self.current_energy = total_energy
+        return total_time, total_energy
 
     def edge_execute(self, task: Task, dst_name=None):
         """远程执行任务"""
         # 判断目标卸载节点为空的情况
         if dst_name is None:
             raise ValueError("dst_name cannot be None!")
+
+        dst_node = self.scenario.get_node(dst_name)
+        dst_node.available = False
 
         # 获取上行/下行传输链路
         up_stream_link = self.scenario.get_link(task.src_name, dst_name)
@@ -162,22 +183,16 @@ class Env(gym.Env):
         up_stream_time = (task.task_size * 1024) / (up_stream_link.trans_up * 1e9) + up_stream_link.distance / up_stream_link.signal_speed
         # 1. 上行传输能耗 = 上行传输功率 * 上行传输时延
         up_stream_energy = up_stream_link.power_up * up_stream_time
-        self.logger.log(f"Task {task.task_id} UpSteam Transmission: "f"{task.src_name} --> {dst_name} Time: {up_stream_time}s Energy: {up_stream_energy}J")
-        # yield self.controller.timeout(up_stream_time * 1e3)
 
         # 2. 边缘计算时延 = 任务大小 / 边缘计算能力
         exc_time = (task.task_size * 1024) / (self.scenario.get_node(dst_name).calculate_mec * 1e9)
         # 2. 边缘计算能耗 = 边缘计算功率 * 边缘计算时延
         exc_energy = self.scenario.get_node(dst_name).power_mec * exc_time
-        self.logger.log(f"Task {task.task_id} Edge Execute: "f"{task.src_name} --> {dst_name} Time: {exc_time}s Energy: {exc_energy}J")
-        # yield self.controller.timeout(exc_time * 1e3)
 
         # 3. 下行传输时延 = 发送时延 + 传播时延 = 任务大小 / 下行传输速率 + 信道长度 / 电磁波的传播速率
         down_stream_time = (task.task_size * 1024) / (down_stream_link.trans_down * 1e9) + down_stream_link.distance / down_stream_link.signal_speed
         # 3. 下行传输能耗 = 下行传输功率 * 下行传输时延
         down_stream_energy = down_stream_link.power_down * down_stream_time
-        self.logger.log(f"Task {task.task_id} DownSteam Transmission: "f"{task.src_name} --> {dst_name} Time: {down_stream_time}s Energy: {down_stream_energy}J")
-        # yield self.controller.timeout(down_stream_time * 1e3)
 
         # 4. 总时延 = 上行传输时延 + 边缘计算时延 + 下行传输时延
         total_time = up_stream_time + exc_time + down_stream_time
@@ -185,17 +200,17 @@ class Env(gym.Env):
         # 4. 总能耗 = 上行传输能耗 + 边缘计算能耗 + 下行传输能耗
         total_energy = up_stream_energy + exc_energy + down_stream_energy
 
-        self.current_energy = total_energy
-        self.current_time = total_time
+        return total_time, total_energy
 
     def generate_tasks(self, task_num: int, task_size: list):
         self.task_list = []
         for i in range(task_num):
-            task = Task(task_id=i, task_size=random.uniform(task_size[0], task_size[1]), src_name='u' + str(i % self.scenario.user_node_num))
+            task = Task(task_id=i, task_size=random.uniform(task_size[0], task_size[1]), src_name='u' + str(i % self.scenario.user_node_num), max_time=150)
             self.task_list.append(task)
 
     def close(self):
         # self.vis_graph(save_as=None)
         self.logger.log("Simulation completed!")
         self.logger.log(f"Total time: {self.sys_total_time}s Total energy: {self.sys_total_energy}J")
+        self.logger.log(f"Task timeout: {self.task_time_out_num}")
         return self.sys_total_time, self.sys_total_energy

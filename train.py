@@ -62,6 +62,8 @@ def main():
             # print(f'Step: {total_step}, Total Reward: {reward}')
         print(f'Episode: {episode + 1}, Total Reward: {total_reward}')
 
+        env.close()
+
         df.loc[len(df)] = {'Episode': episode + 1, 'Total Reward': total_reward}
 
         # 可选：保存模型
