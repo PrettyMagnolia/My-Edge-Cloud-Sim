@@ -10,7 +10,7 @@ def main():
     user_node_num = 20  # 用户节点数量
     edge_node_num = 6  # 边缘节点数量
 
-    state_dim = 1 + user_node_num + 1 + edge_node_num * 4  # 假设状态空间维度为51
+    state_dim = 1 + user_node_num + 1 + edge_node_num * 5  # 假设状态空间维度为51
     action_dim = edge_node_num + 1  # 假设动作空间大小为5
     hid_shape = (64, 64)  # 隐藏层维度
     episodes = 200  # 训练回合数
@@ -69,7 +69,7 @@ def main():
         # 可选：保存模型
         # if (episode + 1) % 100 == 0:
         #     agent.save('Dueling_DDQN', 'Sim', episode + 1)
-    df.to_excel(f'./result/Dueling_DDQN_lr_{lr}.xlsx', index=False)
+    df.to_excel(f'./res/Dueling_DDQN_lr_{lr}_.xlsx', index=False)
 
 
 if __name__ == '__main__':

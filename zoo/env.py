@@ -16,7 +16,7 @@ class EnvLogger:
         self.controller = controller
 
     def log(self, content):
-        print("[{:.2f}]: {}".format(self.controller.now, content))
+        # print("[{}]: {}".format(self.controller.now, content))
         pass
 
 
@@ -40,12 +40,13 @@ class Env(gym.Env):
         # 任务超时数
         self.task_time_out_num = 0
 
-        # 更新状态空间大小：任务大小（1）+ 任务源节点（user_node_num）+ 源节点计算功耗 + 边缘节点信息（edge_node_num * 5：距离，计算功耗，上行传输功耗，下行传输功耗）
-        self.state_size = 1 + user_node_num + 1 + edge_node_num * 4
+        # 更新状态空间大小：任务大小（1）+ 任务源节点（user_node_num）+ 源节点计算功耗 + 边缘节点信息（edge_node_num * 5：是否空闲，距离，计算功耗，上行传输功耗，下行传输功耗）
+        self.state_size = 1 + user_node_num + 1 + edge_node_num * 5
         self.action_space = spaces.Discrete(edge_node_num + 1)
         self.observation_space = spaces.Box(low=0, high=1, shape=(self.state_size,), dtype=np.float32)
 
     def step(self, action):
+        wrong_dst_flag, time_out_flag = False, False
         if action == 0:
             # 选择本地执行
             task_time, task_energy = self.local_execute(self.current_task)
@@ -54,14 +55,13 @@ class Env(gym.Env):
             dst_node = self.scenario.get_node(f'e{action - 1}')
             if dst_node is None or dst_node.is_available is False:
                 # 选择了不可卸载的远程节点 需要进行惩罚
+                wrong_dst_flag = True
                 task_time, task_energy = self.local_execute(self.current_task)
             else:
                 task_time, task_energy = self.edge_execute(self.current_task, dst_name=f'e{action - 1}')
         # 任务时间单位转换
         task_time *= 1e3
-        time_out_flag = False
         if task_time > self.current_task.max_time * 1e-3:
-            print(f"Task {self.current_task.task_id} timeout! Time: {task_time}ms")
             self.task_time_out_num += 1
             # 超时惩罚
             time_out_flag = True
@@ -71,6 +71,7 @@ class Env(gym.Env):
         self.sys_time_list.append(task_time)
         self.sys_energy_list.append(task_energy)
 
+        self.logger.log(f'当前任务执行时间：{task_time}ms 当前任务执行能耗：{task_energy}J time_out_flag: {time_out_flag} wrong_dst_flag: {wrong_dst_flag}')
         # 分配任务到线程
         self.controller.process(self.task_exec(task_time, dst_node))
         # 每100ms更新一次状态
@@ -78,7 +79,7 @@ class Env(gym.Env):
 
         state = self._get_next_state()
         done = self._check_done()
-        reward = self._calculate_reward(time_out_flag=time_out_flag)
+        reward = self._calculate_reward(wrong_dst_flag=wrong_dst_flag, time_out_flag=time_out_flag)
 
         return state, reward, done, {}
 
@@ -96,6 +97,7 @@ class Env(gym.Env):
         self.task_index = 0
         self.sys_total_energy = 0
         self.sys_total_time = 0
+        self.task_time_out_num = 0
         self.current_task = self.task_list[self.task_index]
         return self._get_initial_state()
 
@@ -122,8 +124,8 @@ class Env(gym.Env):
             down_power = min_max_normalization(down_link.power_down, 1, 10)
             edge_cal_power = min_max_normalization(dst_node.power_mec, 40, 50)
             distance = min_max_normalization(up_link.distance, 0, 2000 * 2 ** 0.5)
-            edge_node_info.extend([distance, edge_cal_power, up_power, down_power])
-            # print(edge_node_info)
+            available = 1 if dst_node.is_available else 0
+            edge_node_info.extend([available, distance, edge_cal_power, up_power, down_power])
         state[0] = task_size_normalized
         state[1:self.scenario.user_node_num + 1] = task_source_node_one_hot
         state[self.scenario.user_node_num + 1] = user_cal_power
@@ -135,14 +137,16 @@ class Env(gym.Env):
 
         return state
 
-    def _calculate_reward(self, time_out_flag):
+    def _calculate_reward(self, wrong_dst_flag, time_out_flag):
         # 计算奖励函数
         alpha = 0.5  # 时延权重
         beta = 0.5  # 能耗权重
         time = real_time_normalize(self.sys_time_list)
         energy = real_time_normalize(self.sys_energy_list)
 
-        return math.log(1.0 / (alpha * time + beta * energy)) - 100 if not time_out_flag else -1
+        time_out_pension = -10 if time_out_flag else 0
+        wrong_dst_pension = -10 if wrong_dst_flag else 0
+        return math.log(1.0 / (alpha * time + beta * energy)) - (time_out_pension + wrong_dst_pension)
 
     def _check_done(self):
         # 检查是否完成
@@ -156,7 +160,6 @@ class Env(gym.Env):
         exc_time = (task.task_size * 1024) / (src_node.calculate_loc * 1e9)
         # 本地计算能耗 = 本地计算功耗 * 本地计算时延
         exc_energy = src_node.power_loc * exc_time
-        self.logger.log(f"Task {task.task_id} Local Execute: "f"{task.src_name} Time: {exc_time}s Energy: {exc_energy}J")
 
         # 总时延 = 本地计算时延
         total_time = exc_time
